@@ -1,10 +1,10 @@
 import { Redirect, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar"; 
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import * as SplashScreen from "expo-splash-screen";
-// import { Colors } from "../constants/Colors";
 
-SplashScreen.preventAutoHideAsync();
+
+
+
 function AuthGuard(){
   const { isSignedIn } = {isSignedIn : false}
 
