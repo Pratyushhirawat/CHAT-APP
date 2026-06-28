@@ -53,7 +53,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     if (file) {
         try {
             const uploadPromise = new Promise<{secure_url: string}>((resolve, reject)=>{
-            const uploadStream = cloudinary.uploader.upload_stream({folder: "insta_chata_avatars"}, (error, result) => {
+            const uploadStream = cloudinary.uploader.upload_stream({folder: "insta_chat_avatars"}, (error, result) => {
                 if (error) reject (error)
                     else resolve( result as any)
             })
