@@ -3,6 +3,7 @@ import { AuthRequest } from "../middlewares/auth.js";
 import User from "../models/User.js";
 import cloudinary from "../config/coudinary.js";
 import { Readable } from "stream";
+import { broadcastUserUpdate } from "../socket/socketManager.js";
 
 export const getUsers = async (req: AuthRequest, res: Response) => {
     const users = await User.find({_id: {$ne: req.user!.id}}).select("name email handle avatar bio isOnline lastSeen")
@@ -81,6 +82,10 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         updateData.avatar = avatarUrl;
     }
     const updated = await User.findByIdAndUpdate(req.user!.id, updateData, {returnDocument: "after" })
+
+    if (updated) {
+        broadcastUserUpdate(updated)
+    }
 
     res.json({ success: true, user: updated})
 }
