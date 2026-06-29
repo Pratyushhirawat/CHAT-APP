@@ -1,7 +1,6 @@
 import { View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, FlatList, Image, TextInput , Alert } from 'react-native'
 import React, { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'expo-router'
-import { dummyConversationData, dummyMessages, dummyUserProfile, dummyUsers } from '@/assets/assets'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { styles } from '@/assets/styles/ChatScreen.styles'
 import { Ionicons } from '@expo/vector-icons'
@@ -11,28 +10,42 @@ import Avatar from '@/components/Avatar'
 import Bubble from '@/components/Bubble'
 import * as ImagePicker from 'expo-image-picker'
 import { LinearGradient } from 'expo-linear-gradient'
+import { api, useApp } from '@/context/AppContext'
+import { Message } from '@/types'
 
 export default function ChatScreen() {
 
+  const {id} = useLocalSearchParams<{id: string}>()
   const router = useRouter()
-  let {auth, messages, users, selectedConversations, typingUsers} = {
-    auth: {user: dummyUserProfile},
-    messages: dummyMessages,
-    users: dummyUsers,
-    selectedConversations: dummyConversationData[0],
-    typingUsers: {
-      [dummyUsers[0]._id]: true,
-    }
-  }
+  let {auth, messages, users, selectedConversations, typingUsers, setConversations,setSelectedConversations, setMessages, sendWsEvent} = useApp()
 
   const [text, setText] = useState("")
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(false)
   const [mediaUrl, setMediaUrl] = useState<string | null>(null)
+  const [mediaMime, setMediaMime] = useState<string>('image/jpeg')
+  const [mediaName, setMediaName] = useState<string>('media.jpg')
 
   const flatListRef = useRef<FlatList>(null)
+  const typingTimeRef = useRef<ReturnType<typeof setTimeout>>(null)
 
   const partner = selectedConversations?.participant;
+
+  useEffect(()=>{
+    if(!id) return;
+    setLoading(true)
+    const fetchMessages = () => {
+      api.get(`/api/messages/conversations/${id}/messages`).then(({data})=> {
+        if (data.success) {
+          setMessages(data.messages);
+          setLoading(false)
+        }
+      }) .catch(()=>{
+        setTimeout(fetchMessages, 1000)
+      })
+    }
+    fetchMessages()
+  }, [id])
 
   useEffect(()=> {
     if (messages.length > 0) {
@@ -41,7 +54,26 @@ export default function ChatScreen() {
   },[messages])
 
   const deleteChat = () => {
-
+    const msg = `Delete this chat> This cannot be undone.`;
+    Alert.alert("Delete Chat", msg, [
+      { text: "Cancel", style: 'cancel'},
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const { data } = await api.delete(`/api/messages/conversations/${selectedConversations?._id}`)
+            if (data.success) {
+              setConversations((prev)=>prev.filter((c)=>c._id !== selectedConversations?._id))
+              setSelectedConversations(null);
+              router.back()
+            }
+          } catch (error) {
+            Alert.alert("Error"," Failed to deleteChat ")
+          }
+        }
+      }
+    ])
   }
 
   const pickMedia = async () => {
@@ -59,11 +91,49 @@ export default function ChatScreen() {
         if (!result.canceled && result.assets[0]) {
            const asset = result.assets[0];
            setMediaUrl(asset.uri)
+           setMediaMime(asset.mimeType || "image/jpeg");
+           setMediaName(asset.fileName || (asset.mimeType?.startsWith("video") ? "video.mp4" : "photo.jpg"))
         }
+  }
+
+  const send = async () => {
+    if (!text.trim() && !mediaUrl || !selectedConversations) return; 
+    setSending(true)
+   try {
+    const formData = new FormData();
+    formData.append("receiverId", partner!._id);
+    if(text.trim()) formData.append("text", text.trim());
+    if (mediaUrl) {
+      formData.append("file", {url: mediaUrl, type: mediaMime, name: mediaName} as any)
+    }
+    const {data} = await api.post<{success: boolean, message: Message}>('/api/messages/send', formData, {
+      headers: {"Content-Type" : "multipart/form-data"}
+    })
+    if (data.success) {
+      setMessages((prev)=>[...prev, data.message]);
+      const target = {receiverId: partner!._id};
+      sendWsEvent({ type: "message", ...target, payload: data.message})
+      setText("")
+      setMediaUrl(null)
+    }
+   } catch (err: any) {
+    Alert.alert("Error", err?.response?.data?.message || "Failed to send message")
+   }finally {
+    setLoading(false)
+   }
   }
 
   const handleTyping = (val: string) => {
     setText(val)
+    const target = { receiverId: partner?._id};
+    if(!target.receiverId) return;
+
+    sendWsEvent({type: "typing", ...target, isTyping: true});
+
+    if (typingTimeRef.current) clearTimeout(typingTimeRef.current)
+      typingTimeRef.current = setTimeout(()=> {
+        sendWsEvent({type: "typing", ...target, isTyping: false})
+  }, 1500) 
   }
 
   const typingEntries = Object.entries(typingUsers).filter(([uid, isTyping]) => {
@@ -71,15 +141,7 @@ export default function ChatScreen() {
     return partner?._id === uid
   })
 
-  const send = async () => {
-    if (!text.trim() && !mediaUrl || !selectedConversations) return; 
-    setSending(true)
-    setTimeout(()=> {
-      setSending(false)
-      setText("")
-      setMediaUrl(null)
-    },500)
-  }
+
 
   if (!selectedConversations) {
     return (

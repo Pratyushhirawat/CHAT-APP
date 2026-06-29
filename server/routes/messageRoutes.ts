@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { deleteConversation, getConversations, getMessages, getOrCreateConversation, sendMessage } from "../controllers/messageController.js";
 import upload from "../middlewares/upload.js";
+import { authMiddleware } from "../middlewares/auth.js";
 
 const messageRouter =  Router()
+
+messageRouter.use(authMiddleware)
 
 messageRouter.get('/conversations', getConversations);
 messageRouter.get('/conversations/:conversationId/messages', getMessages);
